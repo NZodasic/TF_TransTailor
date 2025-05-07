@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # TF_TransTailor
 
 
@@ -35,5 +34,3 @@ This script is implementing a neural network model pruning technique with Tensor
 3. Uses scaling factors to identify and prune less important filters in the convolutional layers
 4. Performs importance-aware fine-tuning after pruning
 5. Continues pruning until the accuracy drops below a threshold
-=======
->>>>>>> d1c111e (	renamed:    tf_pruner.py -> Pruner.py)

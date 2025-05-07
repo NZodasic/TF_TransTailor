@@ -1,4 +1,3 @@
-# tf_trans_tailor.py
 import tensorflow as tf
 from tensorflow.keras.applications import ResNet50
 from tensorflow.keras.datasets import cifar10
