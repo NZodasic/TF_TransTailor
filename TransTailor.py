@@ -4,13 +4,14 @@ from tensorflow.keras.applications import ResNet50
 from tensorflow.keras.datasets import cifar10
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tf_pruner import Prunerz
+
 import numpy as np
 import argparse
 import os
 import logging
 import time
 import matplotlib.pyplot as plt
-from tf_pruner import Pruner
 
 # Thiết lập logging
 logger = logging.getLogger(__name__)
@@ -19,17 +20,21 @@ logging.basicConfig(level=logging.INFO)
 TEST_NAME = "TA5_IA10_DROP5_ResNet50_TF"
 
 TA_EPOCH = 5
+
+# Old LR 0.005
 TA_LR = 0.001
 TA_MOMENTUM = 0.9
 
 IA_EPOCH = 10
+
+# Old LR 0.005
 IA_LR = 0.001
 IA_MOMENTUM = 0.9
 
 ACC_DROP = 5
 PRUNING_PERCENTAGE = 5  # The percentage of least important filters that need to be pruned
 
-def load_model():
+def LoadModel():
     """Load the ResNet50 model with weights pre-trained on ImageNet"""
     base_model = ResNet50(
         weights='imagenet',
@@ -87,19 +92,21 @@ def load_data(batch_size):
     
     return train_generator, val_generator, test_generator
 
-def load_arguments():
+def LoadArguments():
     """Parse command-line arguments"""
     parser = argparse.ArgumentParser(description="Config cli params")
-    parser.add_argument("-r", "--root", help="Root directory")
-    parser.add_argument("-c", "--checkpoint", default="", help="Checkpoint path")
+    parser.add_argument("-r","--root", help="Root directory")
+    parser.add_argument("-c","--checkpoint", default="", help="Checkpoint path")
+    parser.add_argument("-n", "--numworker", default=1, help="Number of worker")
     parser.add_argument("-b", "--batchsize", default=32, help="Batch size")
-    
+
     args = parser.parse_args()
     ROOT_DIR = args.root
     CHECKPOINT_PATH = args.checkpoint
+    NUM_WORKER = int(args.numworker)
     BATCH_SIZE = int(args.batchsize)
-    
-    return ROOT_DIR, CHECKPOINT_PATH, BATCH_SIZE
+
+    return ROOT_DIR, CHECKPOINT_PATH, NUM_WORKER, BATCH_SIZE
 
 def calculate_accuracy(model, data_generator):
     """Calculate the accuracy of the model on a given dataset"""
