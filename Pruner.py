@@ -254,7 +254,8 @@ class Pruner:
             include_top=True,
             weights=None,
             input_shape=input_shape,
-            classes=10
+            classes=10,
+            classifier_activation=None  # No activation - outputs raw logits
         )
         
         # Copy weights from old model to new model

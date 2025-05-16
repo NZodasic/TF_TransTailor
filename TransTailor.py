@@ -45,7 +45,7 @@ def load_model():
     
     # Add custom classification head for CIFAR-10
     x = base_model.output
-    predictions = tf.keras.layers.Dense(10, activation='softmax')(x)
+    predictions = tf.keras.layers.Dense(10)(x)  # No activation - outputs raw logits
     
     # Create the full model
     model = tf.keras.models.Model(inputs=base_model.input, outputs=predictions)
@@ -203,3 +203,64 @@ if __name__ == "__main__":
         
         # Train scaling factors
         logger.info("Training scaling factors...")
+        pruner.train_scaling_factors(TA_EPOCH, TA_LR, TA_MOMENTUM)
+        
+        # Generate importance scores
+        logger.info("Generating importance scores...")
+        pruner.generate_importance_scores()
+        
+        # Find filters to prune
+        logger.info(f"Finding {PRUNING_PERCENTAGE}% of filters to prune...")
+        filters_to_prune = pruner.find_filters_to_prune(PRUNING_PERCENTAGE)
+        
+        # Prune model
+        logger.info("Pruning filters and restructuring model...")
+        pruner.prune_and_restructure(filters_to_prune)
+        
+        # Update scaling factors and importance scores
+        pruner.prune_scaling_factors(filters_to_prune)
+        pruner.prune_importance_scores(filters_to_prune)
+        
+        # Fine-tuning with importance-aware gradients
+        logger.info("Fine-tuning with importance-aware gradients...")
+        pruner.importance_aware_fine_tuning(IA_EPOCH, IA_LR, IA_MOMENTUM)
+        
+        # Regular fine-tuning
+        logger.info("Regular fine-tuning...")
+        pruner.finetune(TA_EPOCH, TA_LR, TA_MOMENTUM, 0)
+        
+        # Evaluate pruned model
+        curr_accuracy = calculate_accuracy(pruner.model, test_dataset)
+        logger.info(f"Accuracy after pruning iteration {iteration}: {curr_accuracy:.2f}%")
+        
+        # Save current state
+        pruner.save_state(f"{SAVED_PATH}{iteration}")
+        
+        # Check if accuracy drop is acceptable
+        accuracy_drop = opt_accuracy - curr_accuracy
+        logger.info(f"Accuracy drop: {accuracy_drop:.2f}%")
+        
+        if accuracy_drop > ACC_DROP:
+            logger.info(f"Accuracy drop {accuracy_drop:.2f}% exceeds threshold {ACC_DROP}%")
+            logger.info(f"Stopping pruning process after {iteration} iterations")
+            
+            # Load previous iteration which still meets accuracy requirements
+            if iteration > 1:
+                logger.info(f"Loading optimal model from iteration {iteration-1}")
+                pruner.load_state(f"{SAVED_PATH}{iteration-1}")
+                
+                # Save as optimal model
+                pruner.save_state(RESULT_PATH)
+                
+                # Generate final plot
+                pruner.plot_losses(FIG_PATH)
+                
+                # Final evaluation
+                final_accuracy = calculate_accuracy(pruner.model, test_dataset)
+                logger.info(f"Final model accuracy: {final_accuracy:.2f}%")
+            break
+        
+        iteration += 1
+        
+    logger.info("TRAINING COMPLETE!")
+    time_log()
