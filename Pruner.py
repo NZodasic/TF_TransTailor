@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import pickle
 import logging
 import time
-import os
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.models import Model
 
@@ -121,58 +120,50 @@ class Pruner:
         
         return scaled_model
     
-    def train_scaling_factors(self, num_epochs, learning_rate, momentum, log_dir=None):
+    def train_scaling_factors(self, num_epochs, learning_rate, momentum):
         """
         Train the scaling factors while keeping the model weights fixed
-
+        
         Args:
             num_epochs: Number of epochs to train
             learning_rate: Learning rate for optimizer
             momentum: Momentum for optimizer
-            log_dir: Path to save TensorBoard logs
         """
         logger.info("===TRAIN SCALING FACTORS===")
-
-        summary_writer = tf.summary.create_file_writer(os.path.join(log_dir, "scaling_factors")) if log_dir else None
-
+        
         # Get a list of trainable variables (only scaling factors)
         trainable_vars = list(self.scaling_factors.values())
-
+        
         # Create scaled model
         scaled_model = self.build_scaled_model()
-
+        
         # Define optimizer and loss
         optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=momentum)
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-
+        
         # Define training step
         @tf.function
         def train_step(images, labels):
             with tf.GradientTape() as tape:
                 predictions = scaled_model(images, training=False)
                 loss = loss_fn(labels, predictions)
-
+            
             gradients = tape.gradient(loss, trainable_vars)
             optimizer.apply_gradients(zip(gradients, trainable_vars))
             return loss
-
+        
         # Training loop
         for epoch in range(num_epochs):
             total_loss = 0
             num_batches = 0
-
+            
             for images, labels in self.train_dataset:
                 loss = train_step(images, labels)
                 total_loss += loss
                 num_batches += 1
-
+            
             avg_loss = total_loss / num_batches
             print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
-
-            if summary_writer:
-                with summary_writer.as_default():
-                    tf.summary.scalar("scaling_factor_loss", avg_loss, step=epoch)
-
     
     def generate_importance_scores(self):
         """Calculate importance scores for each filter based on scaling factors and gradients"""
@@ -360,30 +351,36 @@ class Pruner:
                     trainable=False
                 )
     
-    def importance_aware_fine_tuning(self, num_epochs, learning_rate, momentum, log_dir=None):
+    def importance_aware_fine_tuning(self, num_epochs, learning_rate, momentum):
         """
         Fine-tune the model with importance-aware gradients
-
+        
         Args:
             num_epochs: Number of epochs to train
             learning_rate: Learning rate for optimizer
             momentum: Momentum for optimizer
-            log_dir: Path to log directory (for TensorBoard)
         """
         print("===Importance Aware Fine Tuning===")
-
+        
+        # Define optimizer and loss
         optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=momentum)
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-
+        
+        # Training function
         @tf.function
         def train_step(images, labels):
             with tf.GradientTape() as tape:
+                # Forward pass through the model
                 predictions = self.model(images, training=True)
                 loss = loss_fn(labels, predictions)
-
+            
+            # Get trainable variables
             trainable_vars = self.model.trainable_variables
+            
+            # Compute gradients
             gradients = tape.gradient(loss, trainable_vars)
-
+            
+            # Apply importance scores to gradients (for convolutional layers)
             modified_gradients = []
             for i, grad in enumerate(gradients):
                 layer = None
@@ -391,89 +388,92 @@ class Pruner:
                     if any(v.name == trainable_vars[i].name for v in l.trainable_variables):
                         layer = l
                         break
-
+                
                 if isinstance(layer, Conv2D) and layer.name in self.conv_layer_indices:
                     layer_idx = self.conv_layer_indices[layer.name]
-                    if layer_idx in self.importance_scores and 'kernel' in trainable_vars[i].name:
-                        importance = self.importance_scores[layer_idx]
-                        reshaped_importance = tf.reshape(importance, [1, 1, 1, importance.shape[3]])
-                        tiled_importance = tf.tile(reshaped_importance, 
-                                                [grad.shape[0], grad.shape[1], grad.shape[2], 1])
-                        grad = grad * tiled_importance
-                modified_gradients.append(grad)
-
+                    if layer_idx in self.importance_scores:
+                        # Only modify weights gradients, not biases
+                        if 'kernel' in trainable_vars[i].name:
+                            # Extract the importance score
+                            importance = self.importance_scores[layer_idx]
+                            
+                            # Reshape importance to match gradient shape
+                            reshaped_importance = tf.reshape(importance, 
+                                                            [1, 1, 1, importance.shape[3]])
+                            
+                            # Tile importance to match gradient shape
+                            tiled_importance = tf.tile(reshaped_importance, 
+                                                      [grad.shape[0], grad.shape[1], grad.shape[2], 1])
+                            
+                            # Scale gradient by importance
+                            modified_grad = grad * tiled_importance
+                            modified_gradients.append(modified_grad)
+                        else:
+                            modified_gradients.append(grad)
+                    else:
+                        modified_gradients.append(grad)
+                else:
+                    modified_gradients.append(grad)
+            
+            # Apply gradients
             optimizer.apply_gradients(zip(modified_gradients, trainable_vars))
+            
             return loss
-
-        # Create TensorBoard writer if logging is enabled
-        summary_writer = tf.summary.create_file_writer(os.path.join(log_dir, "importance_aware")) if log_dir else None
-
+        
+        # Training loop
+        epoch_loss = 0
         for epoch in range(num_epochs):
             total_loss = 0
             num_batches = 0
-
+            
             for images, labels in self.train_dataset:
                 loss = train_step(images, labels)
                 total_loss += loss
                 num_batches += 1
-
+            
             epoch_loss = total_loss / num_batches
             print(f"Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}")
-
-            # Log to TensorBoard
-            if summary_writer:
-                with summary_writer.as_default():
-                    tf.summary.scalar("importance_aware_loss", epoch_loss, step=epoch)
-                summary_writer.flush()
-
+        
         return epoch_loss
-
     
-    def finetune(self, num_epochs, learning_rate, momentum, checkpoint_epoch=0, log_dir=None):
+    def finetune(self, num_epochs, learning_rate, momentum, checkpoint_epoch=0):
         """
         Fine-tune the model normally
-
+        
         Args:
             num_epochs: Number of epochs to train
             learning_rate: Learning rate for optimizer
             momentum: Momentum for optimizer
             checkpoint_epoch: Epoch to resume from
-            log_dir: Directory to write TensorBoard logs (optional)
         """
         print("\n===Fine-tune the model===")
-
+        
         # Compile the model
         optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=momentum)
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         metrics = ['accuracy']
         
         self.model.compile(optimizer=optimizer, loss=loss_fn, metrics=metrics)
-
+        
         # Create callback to track losses
         class LossHistory(tf.keras.callbacks.Callback):
             def on_epoch_end(self, epoch, logs=None):
                 nonlocal self_ref
                 self_ref.train_losses.append(logs['loss'])
                 self_ref.val_losses.append(logs['val_loss'])
-
+        
         # Need a reference to self inside the callback
         self_ref = self
-        callbacks = [LossHistory()]
-
-        # Add TensorBoard callback if log_dir is provided
-        if log_dir:
-            tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=os.path.join(log_dir, "finetune"))
-            callbacks.append(tensorboard_cb)
-
+        
         # Train the model
         self.model.fit(
             self.train_dataset,
             epochs=num_epochs,
             validation_data=self.val_dataset,
             initial_epoch=checkpoint_epoch,
-            callbacks=callbacks
-    )
-
+            callbacks=[LossHistory()]
+        )
+    
     def save_state(self, path):
         """
         Save the pruner's state to a file
