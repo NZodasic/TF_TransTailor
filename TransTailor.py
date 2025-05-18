@@ -14,14 +14,14 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 # Constants
-TEST_NAME = "TF_ResNet50_CIFAR10_TA5_IA10_DROP5"
+TEST_NAME = "TF_ResNet50_CIFAR10_TA10_IA20_DROP5"
 
 # Training parameters
-TA_EPOCH = 5  # Number of epochs for TA fine-tuning
+TA_EPOCH = 10  # Number of epochs for TA fine-tuning
 TA_LR = 0.001  # Learning rate for TA
 TA_MOMENTUM = 0.9  # Momentum for TA
 
-IA_EPOCH = 10  # Number of epochs for IA fine-tuning
+IA_EPOCH = 20  # Number of epochs for IA fine-tuning
 IA_LR = 0.001  # Learning rate for IA
 IA_MOMENTUM = 0.9  # Momentum for IA
 
@@ -190,7 +190,7 @@ if __name__ == "__main__":
         pruner.load_state(CHECKPOINT_PATH)
     else:
         logger.info("Fine-tuning initial model...")
-        pruner.finetune(40, TA_LR, TA_MOMENTUM, 0)
+        pruner.finetune(10, TA_LR, TA_MOMENTUM, 0)
         
         logger.info("Initializing scaling factors...")
         pruner.init_scaling_factors()
