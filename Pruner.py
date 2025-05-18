@@ -487,7 +487,7 @@ class Pruner:
             path: Path to save the state
         """
         # Save model weights
-        model_weights_path = path + '.h5'
+        model_weights_path = path + '.weights.h5'
         self.model.save_weights(model_weights_path)
         
         # Convert TF Variables to numpy arrays for pickling
