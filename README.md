@@ -8,24 +8,14 @@ This repo is TensorFlow version of this repo: https://github.com/locth/TransTail
 You need to provide the root directory when running the script. This directory will be used to store checkpoints and logs. 
 
 ```bash
-python tf_trans_tailor.py --root /path/to/your/output/directory
-```
-==> Short form:
-```bash
-python tf_trans_tailor.py -r /path/to/your/output/directory
+python TransTailor.py --root ./output_directory --batchsize 64 --logdir logs
 ```
 
-### 2. Additional Optional Arguments
-The script also accepts these optional arguments:
-```
--c or --checkpoint: Path to a checkpoint file if you want to resume training from a previous state
--b or --batchsize: Batch size for training (defaults to 32)
-```
+### 2. Tensorboard
 
-For example:
 ```bash
-python tf_trans_tailor.py -r /path/to/output -b 64 -c /path/to/checkpoint.h5
-```
+tensorboard --logdir logs
+
 
 ### 3. What the Script Does
 This script is implementing a neural network model pruning technique with TensorFlow.

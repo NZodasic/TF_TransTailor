@@ -360,36 +360,30 @@ class Pruner:
                     trainable=False
                 )
     
-    def importance_aware_fine_tuning(self, num_epochs, learning_rate, momentum):
+    def importance_aware_fine_tuning(self, num_epochs, learning_rate, momentum, log_dir=None):
         """
         Fine-tune the model with importance-aware gradients
-        
+
         Args:
             num_epochs: Number of epochs to train
             learning_rate: Learning rate for optimizer
             momentum: Momentum for optimizer
+            log_dir: Path to log directory (for TensorBoard)
         """
         print("===Importance Aware Fine Tuning===")
-        
-        # Define optimizer and loss
+
         optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=momentum)
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        
-        # Training function
+
         @tf.function
         def train_step(images, labels):
             with tf.GradientTape() as tape:
-                # Forward pass through the model
                 predictions = self.model(images, training=True)
                 loss = loss_fn(labels, predictions)
-            
-            # Get trainable variables
+
             trainable_vars = self.model.trainable_variables
-            
-            # Compute gradients
             gradients = tape.gradient(loss, trainable_vars)
-            
-            # Apply importance scores to gradients (for convolutional layers)
+
             modified_gradients = []
             for i, grad in enumerate(gradients):
                 layer = None
@@ -397,53 +391,43 @@ class Pruner:
                     if any(v.name == trainable_vars[i].name for v in l.trainable_variables):
                         layer = l
                         break
-                
+
                 if isinstance(layer, Conv2D) and layer.name in self.conv_layer_indices:
                     layer_idx = self.conv_layer_indices[layer.name]
-                    if layer_idx in self.importance_scores:
-                        # Only modify weights gradients, not biases
-                        if 'kernel' in trainable_vars[i].name:
-                            # Extract the importance score
-                            importance = self.importance_scores[layer_idx]
-                            
-                            # Reshape importance to match gradient shape
-                            reshaped_importance = tf.reshape(importance, 
-                                                            [1, 1, 1, importance.shape[3]])
-                            
-                            # Tile importance to match gradient shape
-                            tiled_importance = tf.tile(reshaped_importance, 
-                                                      [grad.shape[0], grad.shape[1], grad.shape[2], 1])
-                            
-                            # Scale gradient by importance
-                            modified_grad = grad * tiled_importance
-                            modified_gradients.append(modified_grad)
-                        else:
-                            modified_gradients.append(grad)
-                    else:
-                        modified_gradients.append(grad)
-                else:
-                    modified_gradients.append(grad)
-            
-            # Apply gradients
+                    if layer_idx in self.importance_scores and 'kernel' in trainable_vars[i].name:
+                        importance = self.importance_scores[layer_idx]
+                        reshaped_importance = tf.reshape(importance, [1, 1, 1, importance.shape[3]])
+                        tiled_importance = tf.tile(reshaped_importance, 
+                                                [grad.shape[0], grad.shape[1], grad.shape[2], 1])
+                        grad = grad * tiled_importance
+                modified_gradients.append(grad)
+
             optimizer.apply_gradients(zip(modified_gradients, trainable_vars))
-            
             return loss
-        
-        # Training loop
-        epoch_loss = 0
+
+        # Create TensorBoard writer if logging is enabled
+        summary_writer = tf.summary.create_file_writer(os.path.join(log_dir, "importance_aware")) if log_dir else None
+
         for epoch in range(num_epochs):
             total_loss = 0
             num_batches = 0
-            
+
             for images, labels in self.train_dataset:
                 loss = train_step(images, labels)
                 total_loss += loss
                 num_batches += 1
-            
+
             epoch_loss = total_loss / num_batches
             print(f"Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}")
-        
+
+            # Log to TensorBoard
+            if summary_writer:
+                with summary_writer.as_default():
+                    tf.summary.scalar("importance_aware_loss", epoch_loss, step=epoch)
+                summary_writer.flush()
+
         return epoch_loss
+
     
     def finetune(self, num_epochs, learning_rate, momentum, checkpoint_epoch=0, log_dir=None):
         """

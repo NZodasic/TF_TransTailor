@@ -180,7 +180,7 @@ if __name__ == "__main__":
     # Initialize pruner
     pruner = Pruner(model, train_dataset, val_dataset, test_dataset)
     
-    print("Writing test log")
+    print("Test log")
     test_writer = tf.summary.create_file_writer("logs/test")
     with test_writer.as_default():
         tf.summary.scalar("dummy_scalar", 0.5, step=0)
@@ -239,6 +239,11 @@ if __name__ == "__main__":
         # Evaluate pruned model
         curr_accuracy = calculate_accuracy(pruner.model, test_dataset)
         logger.info(f"Accuracy after pruning iteration {iteration}: {curr_accuracy:.2f}%")
+        accuracy_writer = tf.summary.create_file_writer(os.path.join(LOG_DIR, "accuracy"))
+        with accuracy_writer.as_default():
+            tf.summary.scalar("pruned_model_accuracy", curr_accuracy, step=iteration)
+            accuracy_writer.flush()
+
         
         # Save current state
         pruner.save_state(f"{SAVED_PATH}{iteration}")
