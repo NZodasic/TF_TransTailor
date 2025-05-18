@@ -107,13 +107,14 @@ def load_arguments():
     parser.add_argument("-r", "--root", help="Root directory")
     parser.add_argument("-c", "--checkpoint", default="", help="Checkpoint path")
     parser.add_argument("-b", "--batchsize", default=64, help="Batch size")
-    
+    parser.add_argument("--logdir", default="logs", help="TensorBoard log directory")
+
     args = parser.parse_args()
     root_dir = args.root
     checkpoint_path = args.checkpoint
     batch_size = int(args.batchsize)
     
-    return root_dir, checkpoint_path, batch_size
+    return root_dir, checkpoint_path, batch_size, args.logdir
 
 def calculate_accuracy(model, dataset):
     """
@@ -146,7 +147,7 @@ def time_log():
 if __name__ == "__main__":
     # Load arguments
     logger.info("START MAIN PROGRAM!")
-    ROOT_DIR, CHECKPOINT_PATH, BATCH_SIZE = load_arguments()
+    ROOT_DIR, CHECKPOINT_PATH, BATCH_SIZE, LOG_DIR = load_arguments()
     
     # Setup paths
     RESULT_PATH = os.path.join(ROOT_DIR, "checkpoint", "optimal", f"{TEST_NAME}_optimal_model")
@@ -179,13 +180,19 @@ if __name__ == "__main__":
     # Initialize pruner
     pruner = Pruner(model, train_dataset, val_dataset, test_dataset)
     
+    print("Writing test log")
+    test_writer = tf.summary.create_file_writer("logs/test")
+    with test_writer.as_default():
+        tf.summary.scalar("dummy_scalar", 0.5, step=0)
+    test_writer.flush()
+    
     # Load from checkpoint or train initial model
     if os.path.isfile(CHECKPOINT_PATH):
         logger.info("Loading model and pruning info from checkpoint...")
         pruner.load_state(CHECKPOINT_PATH)
     else:
         logger.info("Fine-tuning initial model...")
-        pruner.finetune(40, TA_LR, TA_MOMENTUM, 0)
+        pruner.finetune(10, TA_LR, TA_MOMENTUM, 0)
         
         logger.info("Initializing scaling factors...")
         pruner.init_scaling_factors()
@@ -203,8 +210,8 @@ if __name__ == "__main__":
         
         # Train scaling factors
         logger.info("Training scaling factors...")
-        pruner.train_scaling_factors(TA_EPOCH, TA_LR, TA_MOMENTUM)
-        
+        pruner.train_scaling_factors(TA_EPOCH, TA_LR, TA_MOMENTUM, log_dir=LOG_DIR)
+
         # Generate importance scores
         logger.info("Generating importance scores...")
         pruner.generate_importance_scores()
@@ -223,11 +230,11 @@ if __name__ == "__main__":
         
         # Fine-tuning with importance-aware gradients
         logger.info("Fine-tuning with importance-aware gradients...")
-        pruner.importance_aware_fine_tuning(IA_EPOCH, IA_LR, IA_MOMENTUM)
+        pruner.importance_aware_fine_tuning(IA_EPOCH, IA_LR, IA_MOMENTUM, log_dir=LOG_DIR)
         
         # Regular fine-tuning
         logger.info("Regular fine-tuning...")
-        pruner.finetune(TA_EPOCH, TA_LR, TA_MOMENTUM, 0)
+        pruner.finetune(TA_EPOCH, TA_LR, TA_MOMENTUM, 0, log_dir=LOG_DIR)
         
         # Evaluate pruned model
         curr_accuracy = calculate_accuracy(pruner.model, test_dataset)

@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import pickle
 import logging
 import time
+import os
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.models import Model
 
@@ -120,50 +121,58 @@ class Pruner:
         
         return scaled_model
     
-    def train_scaling_factors(self, num_epochs, learning_rate, momentum):
+    def train_scaling_factors(self, num_epochs, learning_rate, momentum, log_dir=None):
         """
         Train the scaling factors while keeping the model weights fixed
-        
+
         Args:
             num_epochs: Number of epochs to train
             learning_rate: Learning rate for optimizer
             momentum: Momentum for optimizer
+            log_dir: Path to save TensorBoard logs
         """
         logger.info("===TRAIN SCALING FACTORS===")
-        
+
+        summary_writer = tf.summary.create_file_writer(os.path.join(log_dir, "scaling_factors")) if log_dir else None
+
         # Get a list of trainable variables (only scaling factors)
         trainable_vars = list(self.scaling_factors.values())
-        
+
         # Create scaled model
         scaled_model = self.build_scaled_model()
-        
+
         # Define optimizer and loss
         optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=momentum)
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-        
+
         # Define training step
         @tf.function
         def train_step(images, labels):
             with tf.GradientTape() as tape:
                 predictions = scaled_model(images, training=False)
                 loss = loss_fn(labels, predictions)
-            
+
             gradients = tape.gradient(loss, trainable_vars)
             optimizer.apply_gradients(zip(gradients, trainable_vars))
             return loss
-        
+
         # Training loop
         for epoch in range(num_epochs):
             total_loss = 0
             num_batches = 0
-            
+
             for images, labels in self.train_dataset:
                 loss = train_step(images, labels)
                 total_loss += loss
                 num_batches += 1
-            
+
             avg_loss = total_loss / num_batches
             print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.4f}")
+
+            if summary_writer:
+                with summary_writer.as_default():
+                    tf.summary.scalar("scaling_factor_loss", avg_loss, step=epoch)
+
     
     def generate_importance_scores(self):
         """Calculate importance scores for each filter based on scaling factors and gradients"""
@@ -436,44 +445,51 @@ class Pruner:
         
         return epoch_loss
     
-    def finetune(self, num_epochs, learning_rate, momentum, checkpoint_epoch=0):
+    def finetune(self, num_epochs, learning_rate, momentum, checkpoint_epoch=0, log_dir=None):
         """
         Fine-tune the model normally
-        
+
         Args:
             num_epochs: Number of epochs to train
             learning_rate: Learning rate for optimizer
             momentum: Momentum for optimizer
             checkpoint_epoch: Epoch to resume from
+            log_dir: Directory to write TensorBoard logs (optional)
         """
         print("\n===Fine-tune the model===")
-        
+
         # Compile the model
         optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=momentum)
         loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         metrics = ['accuracy']
         
         self.model.compile(optimizer=optimizer, loss=loss_fn, metrics=metrics)
-        
+
         # Create callback to track losses
         class LossHistory(tf.keras.callbacks.Callback):
             def on_epoch_end(self, epoch, logs=None):
                 nonlocal self_ref
                 self_ref.train_losses.append(logs['loss'])
                 self_ref.val_losses.append(logs['val_loss'])
-        
+
         # Need a reference to self inside the callback
         self_ref = self
-        
+        callbacks = [LossHistory()]
+
+        # Add TensorBoard callback if log_dir is provided
+        if log_dir:
+            tensorboard_cb = tf.keras.callbacks.TensorBoard(log_dir=os.path.join(log_dir, "finetune"))
+            callbacks.append(tensorboard_cb)
+
         # Train the model
         self.model.fit(
             self.train_dataset,
             epochs=num_epochs,
             validation_data=self.val_dataset,
             initial_epoch=checkpoint_epoch,
-            callbacks=[LossHistory()]
-        )
-    
+            callbacks=callbacks
+    )
+
     def save_state(self, path):
         """
         Save the pruner's state to a file
