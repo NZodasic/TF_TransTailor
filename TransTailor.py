@@ -1,10 +1,13 @@
 import tensorflow as tf
+from tensorflow.keras.callbacks import TensorBoard
+
+import matplotlib.pyplot as plt
+
 import numpy as np
 import os
 import logging
 import time
 import argparse
-import matplotlib.pyplot as plt
 from Pruner import Pruner
 
 logger = logging.getLogger(__name__)
@@ -107,7 +110,8 @@ def load_arguments():
     parser.add_argument("-r", "--root", help="Root directory")
     parser.add_argument("-c", "--checkpoint", default="", help="Checkpoint path")
     parser.add_argument("-b", "--batchsize", default=64, help="Batch size")
-    
+    parser.add_argument("--logdir", default="logs/fit", help="TensorBoard log directory")
+
     args = parser.parse_args()
     root_dir = args.root
     checkpoint_path = args.checkpoint

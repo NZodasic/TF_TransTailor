@@ -3,9 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import logging
-import time
+from datetime import datetime
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.models import Model
+from tensorflow.keras.callbacks import TensorBoard
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -465,13 +466,17 @@ class Pruner:
         # Need a reference to self inside the callback
         self_ref = self
         
+        # Create TensorBoard callback
+        log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        tensorboard_cb = TensorBoard(log_dir=log_dir, histogram_freq=1)
+        
         # Train the model
         self.model.fit(
             self.train_dataset,
             epochs=num_epochs,
             validation_data=self.val_dataset,
             initial_epoch=checkpoint_epoch,
-            callbacks=[LossHistory()]
+            callbacks=[LossHistory(), tensorboard_cb]
         )
     
     def save_state(self, path):
