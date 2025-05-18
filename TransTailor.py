@@ -182,7 +182,8 @@ if __name__ == "__main__":
     
     # Initialize pruner
     pruner = Pruner(model, train_dataset, val_dataset, test_dataset)
-    
+
+
     # Load from checkpoint or train initial model
     if os.path.isfile(CHECKPOINT_PATH):
         logger.info("Loading model and pruning info from checkpoint...")
