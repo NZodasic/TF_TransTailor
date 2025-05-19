@@ -3,10 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 import logging
-from datetime import datetime
+import time
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.models import Model
-from tensorflow.keras.callbacks import TensorBoard
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -14,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 class Pruner:
     def __init__(self, model, train_dataset, val_dataset, test_dataset, 
                  scaling_factors={}, importance_scores={}, pruned_filters=set(),
-                 train_losses=[], val_losses=[]):
+                 train_losses=[], val_losses=[], ogdir="logs/fit"):
         """
         Initialize the pruner with a model and datasets
         
@@ -42,6 +41,11 @@ class Pruner:
         # Extract all Conv2D layers from the model
         self.conv_layers = []
         self.conv_layer_indices = {}
+
+        # Tensorboard configuration
+        self.logdir = logdir
+        self.tensorboard_callback = TensorBoard(log_dir=logdir, histogram_freq=1)
+
         
         # Map keras layer names to our internal indices
         for i, layer in enumerate(self.model.layers):
@@ -466,19 +470,15 @@ class Pruner:
         # Need a reference to self inside the callback
         self_ref = self
         
-        # Create TensorBoard callback
-        log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-        tensorboard_cb = TensorBoard(log_dir=log_dir, histogram_freq=1)
-        
         # Train the model
         self.model.fit(
             self.train_dataset,
-            epochs=num_epochs,
             validation_data=self.val_dataset,
+            epochs=num_epochs,
             initial_epoch=checkpoint_epoch,
-            callbacks=[LossHistory(), tensorboard_cb]
+            callbacks=[LossHistory(), self.tensorboard_callback]  # Thêm callback ở đây
         )
-    
+
     def save_state(self, path):
         """
         Save the pruner's state to a file
@@ -486,7 +486,7 @@ class Pruner:
         Args:
             path: Path to save the state
         """
-        # Save model weights
+        # Save model weights - make sure to use the correct extension
         model_weights_path = path + '.weights.h5'
         self.model.save_weights(model_weights_path)
         
