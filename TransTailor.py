@@ -1,20 +1,17 @@
 import tensorflow as tf
-from tensorflow.keras.callbacks import TensorBoard
-
-import matplotlib.pyplot as plt
-
 import numpy as np
 import os
 import logging
 import time
 import argparse
+import matplotlib.pyplot as plt
 from Pruner import Pruner
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 # Constants
-TEST_NAME = "TF_ResNet50_CIFAR10_TA10_IA20_DROP5"
+TEST_NAME = "TF_ResNet50_CIFAR10_TA5_IA10_DROP5"
 
 # Training parameters
 TA_EPOCH = 10  # Number of epochs for TA fine-tuning
@@ -99,25 +96,22 @@ def load_data(batch_size):
     
     return train_dataset, val_dataset, test_dataset
 
+
 def load_arguments():
-    """
-    Parse command-line arguments
-    
-    Returns:
-        root_dir, checkpoint_path, batch_size
-    """
     parser = argparse.ArgumentParser(description="Config cli params")
     parser.add_argument("-r", "--root", help="Root directory")
     parser.add_argument("-c", "--checkpoint", default="", help="Checkpoint path")
-    parser.add_argument("-b", "--batchsize", default=64, help="Batch size")
+    parser.add_argument("-b", "--batchsize", default=128, help="Batch size")
     parser.add_argument("--logdir", default="logs/fit", help="TensorBoard log directory")
+
 
     args = parser.parse_args()
     root_dir = args.root
     checkpoint_path = args.checkpoint
     batch_size = int(args.batchsize)
+    logdir = args.logdir
     
-    return root_dir, checkpoint_path, batch_size
+    return root_dir, checkpoint_path, batch_size, logdir
 
 def calculate_accuracy(model, dataset):
     """
@@ -150,7 +144,7 @@ def time_log():
 if __name__ == "__main__":
     # Load arguments
     logger.info("START MAIN PROGRAM!")
-    ROOT_DIR, CHECKPOINT_PATH, BATCH_SIZE = load_arguments()
+    ROOT_DIR, CHECKPOINT_PATH, BATCH_SIZE, LOGDIR = load_arguments()
     
     # Setup paths
     RESULT_PATH = os.path.join(ROOT_DIR, "checkpoint", "optimal", f"{TEST_NAME}_optimal_model")
@@ -181,16 +175,15 @@ if __name__ == "__main__":
     model = load_model()
     
     # Initialize pruner
-    pruner = Pruner(model, train_dataset, val_dataset, test_dataset)
-
-
+    pruner = Pruner(model, train_dataset, val_dataset, test_dataset, logdir=LOGDIR)
+    
     # Load from checkpoint or train initial model
     if os.path.isfile(CHECKPOINT_PATH):
         logger.info("Loading model and pruning info from checkpoint...")
         pruner.load_state(CHECKPOINT_PATH)
     else:
         logger.info("Fine-tuning initial model...")
-        pruner.finetune(10, TA_LR, TA_MOMENTUM, 0)
+        pruner.finetune(40, TA_LR, TA_MOMENTUM, 0)
         
         logger.info("Initializing scaling factors...")
         pruner.init_scaling_factors()
