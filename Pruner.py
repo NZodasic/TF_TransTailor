@@ -13,7 +13,8 @@ logging.basicConfig(level=logging.INFO)
 class Pruner:
     def __init__(self, model, train_dataset, val_dataset, test_dataset, 
                  scaling_factors={}, importance_scores={}, pruned_filters=set(),
-                 train_losses=[], val_losses=[], ogdir="logs/fit"):
+                 train_losses=[], val_losses=[], logdir="logs/fit"):
+
         """
         Initialize the pruner with a model and datasets
         
