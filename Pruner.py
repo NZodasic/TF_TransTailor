@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import pickle
 import logging
 import time
+from tensorflow.keras.callbacks import TensorBoard
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.models import Model
 
